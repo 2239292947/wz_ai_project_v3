@@ -55,6 +55,9 @@ async function main() {
         maxResubmitCount: parseInt(maxResubmitConfig?.configValue || "3"),
         submittedBy: "仓库管理员",
       },
+      include: {
+        orderSnapshot: true,
+      },
     })
 
     console.log("✓ 工单创建成功:", ticket.ticketNo)
