@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 运单本地快照表（V3 自有）
+// 从 V2 接口同步的运单只读快照，用于异常工单关联展示
+model OrderSnapshot {
+  id              String   @id @default(cuid())
+  v2OrderId       String   @unique // V2 系统的运单 ID
+  externalCode    String?  // 外部单号
+  storeName       String?  // 店铺名称
+  receiverName    String?  // 收件人姓名
+  receiverPhone   String?  // 收件人电话
+  receiverAddress String?  // 收件人地址
+  amount          Float?   // 运单金额
+  itemsJson       Json     // 商品明细 JSON（快照）
+  syncedAt        DateTime @default(now()) // 同步时间
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // 关联
+  exceptionTickets ExceptionTicket[]
+  scanRecords      ScanRecord[]
+
+  @@index([v2OrderId])
+  @@index([externalCode])
+  @@index([syncedAt])
+}
+
+// 接口同步日志表
+model SyncLog {
+  id            String   @id @default(cuid())
+  apiName       String   // 接口名称
+  requestParams Json     // 请求参数摘要
+  responseStatus Int     // HTTP 状态码
+  responseBody  String?  // 响应内容（脱敏）
+  status        String   // SUCCESS | FAILED | TIMEOUT
+  errorMessage  String?  // 错误信息
+  duration      Int      // 耗时（毫秒）
+  createdAt     DateTime @default(now())
+
+  @@index([apiName])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// 扫描记录表（V3 自有）
+model ScanRecord {
+  id               String   @id @default(cuid())
+  scanId           String   @unique // 扫描 ID
+  orderSnapshotId  String
+  orderSnapshot    OrderSnapshot @relation(fields: [orderSnapshotId], references: [id], onDelete: Restrict)
+
+  skuCode          String
+  skuName          String
+  scannedQuantity  Int      // 扫描数量
+  scanTime         DateTime @default(now())
+  operator         String   // 操作人
+  deviceId         String?  // 设备 ID
+
+  // 品控判定结果
+  qcResult         String   // PASS | FAIL
+  qcRuleId         String?  // 命中的品控规则 ID
+  qcRuleName       String?  // 命中的品控规则名称
+  qcDescription    String?  // 品控异常描述
+
+  // 批次锁定状态
+  batchStatus      String   // NORMAL | QC_HOLD
+
+  // 关联工单（异常时非空）
+  ticketId         String?
+  ticket           ExceptionTicket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  createdAt        DateTime @default(now())
+
+  @@index([orderSnapshotId])
+  @@index([skuCode])
+  @@index([scanTime])
+  @@index([ticketId])
+  @@index([batchStatus])
+}
+
+// 异常工单表
+model ExceptionTicket {
+  id                    String        @id @default(cuid())
+  ticketNo              String        @unique // 工单编号
+  orderSnapshotId       String
+  orderSnapshot         OrderSnapshot @relation(fields: [orderSnapshotId], references: [id], onDelete: Restrict)
+
+  // 异常分类
+  exceptionType         String        // QC | LOGISTICS
+  source                String        // SCAN_QC | MANUAL_LOGISTICS
+  category              String        // 异常子类型（破损/丢件/拒收等）
+  description           String        // 详细描述
+
+  // 工单状态
+  status                String        @default("PENDING") // PENDING | LEVEL1_APPROVING | LEVEL2_APPROVING | EXECUTING | COMPLETED | REJECTED | CANCELLED
+  priority              String        @default("MEDIUM")  // LOW | MEDIUM | HIGH | URGENT
+
+  // 审批相关
+  currentApprovalLevel  Int           @default(1) // 当前审批层级 1 | 2
+  resubmitCount         Int           @default(0) // 已重新提交次数
+  maxResubmitCount      Int           @default(3) // 最大重新提交次数
+
+  // 操作人
+  submittedBy           String        // 上报人
+  submittedAt           DateTime      @default(now())
+  completedAt           DateTime?    // 完成时间
+
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  // 关联
+  scanRecords           ScanRecord[]
+  approvalRecords       ApprovalRecord[]
+  compensationRecords   CompensationRecord[]
+
+  @@index([orderSnapshotId])
+  @@index([status])
+  @@index([exceptionType])
+  @@index([source])
+  @@index([submittedAt])
+}
+
+// 审批记录表
+model ApprovalRecord {
+  id              String   @id @default(cuid())
+  ticketId        String
+  ticket          ExceptionTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  approvalLevel   Int      // 审批层级 1 | 2
+  approverId      String   // 审批人 ID
+  approverName    String   // 审批人姓名
+  action          String   // APPROVE | REJECT | ESCALATE | TRANSFER
+  comment         String   // 审批意见
+
+  approvedAt      DateTime // 审批时间
+  createdAt       DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([approverId])
+  @@index([approvedAt])
+}
+
+// 赔付记录表
+model CompensationRecord {
+  id                 String   @id @default(cuid())
+  ticketId           String
+  ticket             ExceptionTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  approvalRecordId   String   // 关联审批记录 ID
+  amount             Float    // 赔付金额
+  direction          String   // TO_CUSTOMER | FROM_SUPPLIER
+  status             String   @default("PENDING") // PENDING | PAID | RECOVERED | CANCELLED
+
+  reason             String   // 赔付原因
+  paymentMethod      String?  // 支付方式
+  paidAt             DateTime? // 支付时间
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([ticketId])
+  @@index([approvalRecordId])
+  @@index([status])
+}
+
+// 库存记录表
+model InventoryRecord {
+  id               String   @id @default(cuid())
+  skuCode          String
+  warehouseId      String   @default("default")
+
+  quantityChange   Int      // 正数=增加，负数=减少
+  changeType       String   // COMPENSATION_DEDUCT | COMPENSATION_ADD | RETURN_IN | RESHIP_DEDUCT | QC_RELEASE | QC_HOLD
+
+  ticketId         String?
+  approvalRecordId String?
+
+  operator         String   // 操作人
+  remark           String   // 备注
+
+  createdAt        DateTime @default(now())
+
+  @@index([skuCode])
+  @@index([warehouseId])
+  @@index([ticketId])
+  @@index([createdAt])
+}
+
+// 品控规则表（V3 自有）
+model QCRule {
+  id              String   @id @default(cuid())
+  name            String   // 规则名称
+  code            String   @unique // 规则编码
+  description     String   // 规则描述
+
+  exceptionType   String   // 异常类型
+  triggerCondition Json    // 触发条件（JSON 配置）
+  // {
+  //   type: "quantity_diff_percent" | "damage_level" | "spec_mismatch" | "label_error" | "batch_anomaly",
+  //   threshold: number,
+  //   operator?: ">" | "<" | ">=" | "<=" | "==" | "!="
+  // }
+
+  severity        String   // LOW | MEDIUM | HIGH | CRITICAL
+  autoCreateTicket Boolean @default(true) // 是否自动创建工单
+  autoApprovalLevel Int    @default(1) // 自动进入审批级别
+
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([exceptionType])
+  @@index([isActive])
+}
+
+// 系统配置表（用于存储分级审批金额阈值、超时时长等可配置参数）
+model SystemConfig {
+  id          String   @id @default(cuid())
+  configKey   String   @unique
+  configValue String
+  configType  String   // NUMBER | STRING | JSON | BOOLEAN
+  description String?
+  category    String   // APPROVAL | TIMEOUT | QC | NOTIFICATION
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([configKey])
+  @@index([category])
+}
