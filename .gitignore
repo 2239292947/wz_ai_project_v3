@@ -8,3 +8,4 @@ coverage
 .vercel
 .next
 src/generated
+.claude/worktrees/fix-vercel-postinstall/

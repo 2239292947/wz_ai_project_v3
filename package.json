@@ -16,7 +16,8 @@
     "test:create-ticket": "tsx scripts/test-create-ticket.ts",
     "test:approval-flow": "tsx scripts/test-approval-flow.ts",
     "test:qc-scan": "tsx scripts/test-qc-scan.ts",
-    "test:timeout": "tsx scripts/test-timeout.ts"
+    "test:timeout": "tsx scripts/test-timeout.ts",
+    "test:order-validation": "tsx scripts/test-order-validation.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

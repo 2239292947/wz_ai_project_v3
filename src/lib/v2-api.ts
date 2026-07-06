@@ -129,13 +129,73 @@ export class V2ApiClient {
       if (data.success && data.order) {
         return { exists: true, order: data.order }
       } else {
-        return { exists: false, error: data.error || "Order not found" }
+        // V2 API 返回订单不存在，降级到本地快照查询
+        console.warn(`V2 API returned order not found: ${orderId}, trying local fallback`)
+        return this.fallbackToLocalOrder(orderId)
       }
     } catch (error) {
-      return {
-        exists: false,
-        error: `V2 API error: ${(error as Error).message}`,
+      // V2 API 调用失败，降级到本地快照查询
+      console.warn(`V2 API error, falling back to local: ${(error as Error).message}`)
+      return this.fallbackToLocalOrder(orderId)
+    }
+  }
+
+  /**
+   * 降级方案：从本地快照查询订单
+   * 当 V2 API 不可用时（如 SSO 问题、网络问题），使用本地缓存的订单数据
+   */
+  private async fallbackToLocalOrder(orderId: string): Promise<{
+    exists: boolean
+    order?: V2Order
+    error?: string
+  }> {
+    try {
+      // 动态导入避免循环依赖
+      const { OrderSnapshotService } = await import("./order-snapshot-service")
+
+      // 先通过 v2OrderId 查询
+      const snapshot = await OrderSnapshotService.findLocal(orderId)
+
+      // 如果没找到，尝试通过 externalCode 查询
+      if (!snapshot) {
+        // 假设 orderId 可能是外部单号
+        const byExternalCode = await OrderSnapshotService.findByExternalCode(orderId)
+        if (byExternalCode) {
+          return this.convertSnapshotToV2Order(byExternalCode)
+        }
+      } else {
+        return this.convertSnapshotToV2Order(snapshot)
       }
+
+      return { exists: false, error: "Order not found (local cache)" }
+    } catch (error) {
+      console.error("Local fallback failed:", error)
+      return { exists: false, error: `Local fallback failed: ${(error as Error).message}` }
+    }
+  }
+
+  /**
+   * 将本地快照转换为 V2Order 格式
+   */
+  private convertSnapshotToV2Order(snapshot: any): {
+    exists: boolean
+    order?: V2Order
+    error?: string
+  } {
+    try {
+      const order: V2Order = {
+        id: snapshot.v2OrderId,
+        externalCode: snapshot.externalCode,
+        storeName: snapshot.storeName,
+        receiverName: snapshot.receiverName,
+        receiverPhone: snapshot.receiverPhone,
+        receiverAddress: snapshot.receiverAddress,
+        amount: snapshot.amount,
+        items: snapshot.itemsJson || [],
+      }
+      return { exists: true, order }
+    } catch (error) {
+      return { exists: false, error: `Failed to convert snapshot: ${(error as Error).message}` }
     }
   }
 

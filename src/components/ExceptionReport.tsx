@@ -1,8 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { v2Api } from "@/lib/v2-api"
-import { OrderSnapshotService } from "@/lib/order-snapshot-service"
 
 interface Order {
   id: string
@@ -46,28 +44,39 @@ export function ExceptionReport() {
     setOrder(null)
 
     try {
-      // 实时校验订单（调用 V2 接口）
-      const result = await v2Api.validateOrder(orderId)
+      // 调用 V3 API 路由验证订单（服务端代理，自动降级）
+      const res = await fetch("/api/v3/orders/validate-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      })
 
-      if (!result.exists) {
-        setError(result.error || "订单不存在")
+      const data = await res.json()
+
+      if (!data.success) {
+        setError(data.error || "订单不存在")
         return
       }
 
-      if (!result.order) {
-        setError("无法获取订单信息")
-        return
+      // 订单验证成功，更新 UI
+      setOrder({
+        id: data.order.id,
+        v2OrderId: data.order.id,
+        externalCode: data.order.externalCode,
+        storeName: data.order.storeName,
+        receiverName: data.order.receiverName,
+        receiverPhone: data.order.receiverPhone,
+        receiverAddress: data.order.receiverAddress,
+        amount: data.order.amount,
+        itemsJson: data.order.items || [],
+        syncedAt: new Date(),
+      })
+
+      // 如果数据来自本地缓存，显示提示
+      if (data.source === "local-cache" && data.warning) {
+        console.warn(data.warning)
+        // 可选：在界面上显示数据可能不是最新的警告
       }
-
-      // 同步到本地快照
-      const syncResult = await OrderSnapshotService.syncOrderFromV2(result.order.id)
-
-      if (!syncResult.success) {
-        setError(syncResult.error || "同步订单失败")
-        return
-      }
-
-      setOrder(syncResult.snapshot)
     } catch (err) {
       setError((err as Error).message)
     } finally {
