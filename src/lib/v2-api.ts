@@ -68,8 +68,14 @@ export class V2ApiClient {
   private retryCount: number
 
   constructor() {
-    this.baseUrl = process.env.V2_API_URL || ""
-    this.apiKey = process.env.V2_API_KEY || ""
+    // 注：Vercel 不会读取仓库内的 .env 文件，部署环境必须通过 Vercel 的环境变量
+    // (Project Settings -> Environment Variables) 配置 V2_API_URL / V2_API_KEY。
+    // 以下默认值仅作为兜底，确保未配置时仍能指向已部署的 V2 实例（可被环境变量覆盖）。
+    this.baseUrl = (
+      process.env.V2_API_URL ||
+      "https://wz-ai-project-git-master-2239292947s-projects.vercel.app"
+    ).replace(/\/$/, "")
+    this.apiKey = process.env.V2_API_KEY || "local-v2-api-key"
     this.timeout = parseInt(process.env.V2_SYNC_TIMEOUT || "10000")
     this.retryCount = parseInt(process.env.V2_SYNC_RETRY_COUNT || "2")
   }
