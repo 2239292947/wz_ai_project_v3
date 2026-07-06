@@ -7,3 +7,4 @@ node_modules
 coverage
 .vercel
 .next
+src/generated
