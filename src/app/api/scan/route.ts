@@ -203,11 +203,19 @@ export async function GET(request: NextRequest) {
 
     const where: any = {}
     if (orderId) {
-      const snapshot = await db().orderSnapshot.findUnique({
-        where: { v2OrderId: orderId },
+      // orderId 参数同时支持「V2 运单号」与「外部单号(externalCode)」检索
+      const snapshots = await db().orderSnapshot.findMany({
+        where: {
+          OR: [{ v2OrderId: orderId }, { externalCode: orderId }],
+        },
+        select: { id: true },
       })
-      if (snapshot) {
-        where.orderSnapshotId = snapshot.id
+      if (snapshots.length > 0) {
+        where.orderSnapshotId = { in: snapshots.map((s) => s.id) }
+      } else {
+        // 未匹配到任何运单 -> 显式约束为不可能命中的值，返回空结果
+        // （避免 where 为空时误返回全部扫描记录）
+        where.orderSnapshotId = "__no_match__"
       }
     }
     if (skuCode) {
