@@ -202,19 +202,57 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get("pageSize") || "20")
 
     const where: any = {}
+    let order: any = null
+    let syncedFromV2 = false
+
     if (orderId) {
-      // orderId 参数同时支持「V2 运单号」与「外部单号(externalCode)」检索
+      // orderId 参数同时支持「V2 运单号(v2OrderId)」与「外部单号(externalCode)」检索
       const snapshots = await db().orderSnapshot.findMany({
         where: {
           OR: [{ v2OrderId: orderId }, { externalCode: orderId }],
         },
-        select: { id: true },
+        orderBy: { syncedAt: "desc" },
       })
+
       if (snapshots.length > 0) {
+        // 本地已有快照 -> 按快照过滤扫描记录，并直接返回运单详情
         where.orderSnapshotId = { in: snapshots.map((s) => s.id) }
+        const snap = snapshots[0]
+        order = {
+          v2OrderId: snap.v2OrderId,
+          externalCode: snap.externalCode,
+          storeName: snap.storeName,
+          receiverName: snap.receiverName,
+          receiverPhone: snap.receiverPhone,
+          receiverAddress: snap.receiverAddress,
+          amount: snap.amount,
+          items: snap.itemsJson,
+          source: "local",
+        }
       } else {
-        // 未匹配到任何运单 -> 显式约束为不可能命中的值，返回空结果
-        // （避免 where 为空时误返回全部扫描记录）
+        // 本地无匹配 -> 结合 V2 项目实时查询（考点5：真实接口校验 + 降级方案）
+        // 这样即便 V3 尚未同步过该运单，也能返回运单详情而不是"无数据"
+        try {
+          const result = await v2Api.validateOrder(orderId)
+          if (result.exists && result.order) {
+            const o = result.order
+            order = {
+              v2OrderId: o.id,
+              externalCode: o.externalCode,
+              storeName: o.storeName,
+              receiverName: o.receiverName,
+              receiverPhone: o.receiverPhone,
+              receiverAddress: o.receiverAddress,
+              amount: o.amount,
+              items: o.items,
+              source: result.source || "v2",
+            }
+            syncedFromV2 = result.source !== "local-cache"
+          }
+        } catch (e) {
+          console.warn("[scan GET] V2 查询失败，仅返回本地结果:", (e as Error).message)
+        }
+        // 本地无快照，扫描记录按"未匹配"处理（保持空结果，不误返回全部）
         where.orderSnapshotId = "__no_match__"
       }
     }
@@ -242,6 +280,8 @@ export async function GET(request: NextRequest) {
       total,
       page,
       pageSize,
+      order,
+      syncedFromV2,
     })
   } catch (error) {
     return NextResponse.json(

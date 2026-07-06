@@ -3,15 +3,17 @@
 import { useState, useEffect } from "react"
 
 interface Order {
-  id: string
+  v2OrderId: string
   externalCode: string | null
   storeName: string | null
   receiverName: string | null
   receiverPhone: string | null
   receiverAddress: string | null
   amount: number | null
-  itemsJson: any[]
-  syncedAt: Date
+  itemsJson?: any[]
+  items?: any[]
+  syncedAt?: Date
+  source?: string
 }
 
 export default function ScanOperation() {
@@ -32,14 +34,19 @@ export default function ScanOperation() {
       const res = await fetch(`/api/scan?orderId=${encodeURIComponent(orderId)}`)
       const data = await res.json()
 
-      if (data.success && data.records.length > 0) {
-        // 已经有扫描记录，显示订单信息
-        const snapshotId = data.records[0].orderSnapshotId
-        // 这里需要获取订单快照信息
-        setResult({ type: "history", records: data.records })
-      } else {
-        // 尝试同步订单
+      if (data.success && data.order) {
+        // 找到运单（可能来自本地快照，也可能来自 V2 实时查询）
+        setOrder(data.order)
+        if (data.records && data.records.length > 0) {
+          setResult({ type: "history", records: data.records })
+        } else {
+          setResult(null)
+        }
+      } else if (data.success) {
+        // 本地与 V2 均无该运单 -> 尝试触发同步
         await syncOrder(orderId)
+      } else {
+        setResult({ type: "error", error: data.error })
       }
     } catch (error) {
       console.error("Search error:", error)
@@ -144,7 +151,7 @@ export default function ScanOperation() {
 
           <div className="mb-4 rounded-lg bg-slate-50 p-4">
             <p className="text-sm text-slate-600">
-              运单号：<span className="font-medium">{order.externalCode || order.id}</span>
+              运单号：<span className="font-medium">{order.v2OrderId || order.externalCode}</span>
             </p>
             <p className="text-sm text-slate-600">
               收件人：{order.receiverName} {order.receiverPhone}
