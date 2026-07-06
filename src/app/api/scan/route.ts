@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { v2Api } from "@/lib/v2-api"
 import { SyncLogService } from "@/lib/sync-log"
 import { OrderSnapshotService } from "@/lib/order-snapshot-service"
-import { QCRuleEngine } from "@/lib/qc-rules"
+import { qcRuleEngine } from "@/lib/qc-rules"
 
 /**
  * 扫描操作 API
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. 品控规则检测
-    const qcResult = await QCRuleEngine.evaluateScan({
+    const qcResult = await qcRuleEngine.evaluateScan({
       orderSnapshotId: snapshot.id,
       skuCode,
       skuName: item.skuName,
