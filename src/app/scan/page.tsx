@@ -14,7 +14,7 @@ interface Order {
   syncedAt: Date
 }
 
-export function ScanOperation() {
+export default function ScanOperation() {
   const [orderId, setOrderId] = useState("")
   const [order, setOrder] = useState<Order | null>(null)
   const [skuCode, setSkuCode] = useState("")
