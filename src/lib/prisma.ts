@@ -1,11 +1,11 @@
 import { PrismaClient } from "@prisma/client"
 
-// Lazy initialization to avoid "did not initialize yet" error in Vercel serverless
+// Lazy initialization for Vercel serverless environment
 let _prisma: PrismaClient | null = null
 
 /**
  * Get or create PrismaClient instance
- * Use this function in API routes instead of importing prisma directly
+ * This function MUST be used in API routes to avoid initialization errors
  */
 export function db(): PrismaClient {
   if (!_prisma) {
@@ -14,7 +14,5 @@ export function db(): PrismaClient {
   return _prisma
 }
 
-// Legacy export for backwards compatibility
-// WARNING: This may cause issues in serverless environments
-// Prefer using db() function instead
-export const prisma = /*#__PURE__*/ db()
+// DO NOT export prisma as a constant - it will cause initialization errors
+// Always use db() function instead
