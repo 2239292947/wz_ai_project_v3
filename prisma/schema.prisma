@@ -36,15 +36,17 @@ model OrderSnapshot {
 // 接口同步日志表
 model SyncLog {
   id            String   @id @default(cuid())
+  requestId     String?  // 跨系统调用追踪 ID（一次调用链唯一）
   apiName       String   // 接口名称
   requestParams Json     // 请求参数摘要
   responseStatus Int     // HTTP 状态码
-  responseBody  String?  // 响应内容（脱敏）
+  responseBody  String?  // 响应内容摘要（脱敏/截断）
   status        String   // SUCCESS | FAILED | TIMEOUT
-  errorMessage  String?  // 错误信息
+  errorMessage  String?  // 错误信息（区分 404 不存在 / 网络超时）
   duration      Int      // 耗时（毫秒）
   createdAt     DateTime @default(now())
 
+  @@index([requestId])
   @@index([apiName])
   @@index([status])
   @@index([createdAt])
@@ -107,6 +109,10 @@ model ExceptionTicket {
   currentApprovalLevel  Int           @default(1) // 当前审批层级 1 | 2
   resubmitCount         Int           @default(0) // 已重新提交次数
   maxResubmitCount      Int           @default(3) // 最大重新提交次数
+
+  // 异常涉及金额 / 运单货值（由上报人在 V3 录入，用于驱动分级审批阈值与赔付计算）
+  // 注：V2 解析的运单不含金额字段，故金额在 V3 侧录入，详见《需求理解与假设说明》第①项
+  amount                Float?  @default(0)
 
   // 操作人
   submittedBy           String        // 上报人

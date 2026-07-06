@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     try {
       // 尝试创建一个新的 PrismaClient 实例
-      const { PrismaClient } = await import("@prisma/client")
+      const { PrismaClient } = await import("@/generated/prisma")
       const testClient = new PrismaClient()
 
       // 尝试连接

@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client"
+import { PrismaClient } from "@/generated/prisma"
 
 // Lazy initialization for Vercel serverless environment
 let _prisma: PrismaClient | null = null

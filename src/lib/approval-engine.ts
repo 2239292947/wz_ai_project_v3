@@ -1,5 +1,5 @@
 import { db } from "@/lib/prisma"
-import type { Prisma } from "@prisma/client"
+import type { Prisma } from "@/generated/prisma"
 import { SystemConfigService } from "./system-config"
 import { v2Api } from "./v2-api"
 import { SyncLogService } from "./sync-log"
@@ -164,8 +164,8 @@ export class ApprovalEngine {
         case "LEVEL1_APPROVING":
           // 一级审批中
           if (action === "APPROVE") {
-            // 检查是否需要二级审批
-            const amount = currentTicket.orderSnapshot.amount || 0
+            // 检查是否需要二级审批（金额来源：工单录入的异常金额 / 运单货值；V2 解析运单无金额字段）
+            const amount = currentTicket.amount ?? 0
             const needsLevel2 = await this.shouldEscalateToLevel2(amount)
 
             if (needsLevel2) {
@@ -342,8 +342,8 @@ export class ApprovalEngine {
     approvalRecordId: string,
     direction: "TO_CUSTOMER" | "FROM_SUPPLIER"
   ): Promise<void> {
-    // 根据金额和规则计算赔付金额（这里简化处理）
-    const amount = ticket.orderSnapshot.amount || 0
+    // 根据金额和规则计算赔付金额（金额来源：工单录入的异常金额 / 运单货值）
+    const amount = ticket.amount ?? ticket.orderSnapshot?.amount ?? 0
     const compensationAmount = direction === "TO_CUSTOMER" ? amount * 0.8 : amount * 0.5
 
     await tx.compensationRecord.create({

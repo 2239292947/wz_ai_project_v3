@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
       category,
       description,
       submittedBy,
+      amount,
     } = body
 
     if (!orderId || !exceptionType || !category || !submittedBy) {
@@ -25,6 +26,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // 异常涉及金额 / 运单货值：用于驱动分级审批阈值与赔付计算（V2 解析运单不含金额，故在 V3 录入）
+    const ticketAmount = typeof amount === "number" && !isNaN(amount) ? amount : 0
 
     // 1. 同步订单（实时校验）
     const syncResult = await OrderSnapshotService.syncOrderFromV2(orderId)
@@ -75,6 +79,7 @@ export async function POST(request: NextRequest) {
         description,
         status: "PENDING",
         submittedBy,
+        amount: ticketAmount,
         maxResubmitCount: parseInt(maxResubmitConfig?.configValue || "3"),
       },
     })

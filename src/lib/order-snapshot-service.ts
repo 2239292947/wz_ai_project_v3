@@ -1,11 +1,13 @@
 import { db } from "@/lib/prisma"
 import { SystemConfigService } from "./system-config"
 import { v2Api } from "./v2-api"
-import { SyncLogService } from "./sync-log"
 
 /**
  * 订单快照服务
  * 管理从 V2 同步的运单快照数据
+ *
+ * 说明：跨系统调用的链路日志（Request ID / 状态码 / 耗时 / 错误）已统一在
+ * v2-api.ts 的 request() 中写入 SyncLog，本服务不再重复记录，避免重复日志。
  */
 export class OrderSnapshotService {
   /**
@@ -16,23 +18,12 @@ export class OrderSnapshotService {
     snapshot?: any
     error?: string
   }> {
-    const startTime = Date.now()
-
     try {
-      // 1. 调用 V2 接口获取订单详情
+      // 1. 调用 V2 接口获取订单详情（内部已带 Request ID 与链路日志）
       const result = await v2Api.validateOrder(v2OrderId)
 
       if (!result.exists || !result.order) {
-        // 记录失败日志
-        await SyncLogService.log({
-          apiName: "validateOrder",
-          requestParams: { orderId: v2OrderId },
-          responseStatus: 404,
-          status: "FAILED",
-          errorMessage: result.error,
-          duration: Date.now() - startTime,
-        })
-
+        // V2 明确返回不存在，或本地降级也无记录 -> 直接失败，绝不伪造
         return { success: false, error: result.error }
       }
 
@@ -64,27 +55,8 @@ export class OrderSnapshotService {
         },
       })
 
-      // 3. 记录成功日志
-      await SyncLogService.log({
-        apiName: "validateOrder",
-        requestParams: { orderId: v2OrderId },
-        responseStatus: 200,
-        status: "SUCCESS",
-        duration: Date.now() - startTime,
-      })
-
       return { success: true, snapshot }
     } catch (error) {
-      // 记录错误日志
-      await SyncLogService.log({
-        apiName: "validateOrder",
-        requestParams: { orderId: v2OrderId },
-        responseStatus: 500,
-        status: "FAILED",
-        errorMessage: (error as Error).message,
-        duration: Date.now() - startTime,
-      })
-
       return {
         success: false,
         error: `同步失败：${(error as Error).message}`,
@@ -114,15 +86,6 @@ export class OrderSnapshotService {
       const result = await v2Api.syncOrders(params)
 
       if (!result.success || !result.orders) {
-        await SyncLogService.log({
-          apiName: "batchSync",
-          requestParams: params,
-          responseStatus: 500,
-          status: "FAILED",
-          errorMessage: result.error,
-          duration: Date.now() - startTime,
-        })
-
         return { success: false, synced: 0, failed: 0, error: result.error }
       }
 
@@ -163,25 +126,8 @@ export class OrderSnapshotService {
         }
       }
 
-      await SyncLogService.log({
-        apiName: "batchSync",
-        requestParams: params,
-        responseStatus: 200,
-        status: "SUCCESS",
-        duration: Date.now() - startTime,
-      })
-
       return { success: true, synced, failed }
     } catch (error) {
-      await SyncLogService.log({
-        apiName: "batchSync",
-        requestParams: params,
-        responseStatus: 500,
-        status: "FAILED",
-        errorMessage: (error as Error).message,
-        duration: Date.now() - startTime,
-      })
-
       return {
         success: false,
         synced: 0,

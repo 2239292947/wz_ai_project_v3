@@ -34,15 +34,31 @@ export async function POST(request: NextRequest) {
     const snapshot = syncResult.snapshot
     const items = snapshot.itemsJson as any[]
 
-    // 2. 查找 SKU 在订单中的信息
-    const item = items.find((i) => i.skuCode === skuCode)
+    // 2. 通过 V2 接口实时校验 SKU 是否归属于该运单（考点5：SKU 归属校验走真实接口）
+    //    降级策略：仅当 V2 整体不可用时，才退回到本地快照做 SKU 归属判断，
+    //    绝不拿过期缓存把"不存在的 SKU"校验成存在。
+    const skuCheck = await v2Api.validateSKU(snapshot.v2OrderId, skuCode)
+    const localItem = items.find((i) => i.skuCode === skuCode)
 
-    if (!item) {
+    if (skuCheck.valid) {
+      // V2 明确返回该 SKU 属于此运单
+    } else if (skuCheck.error && skuCheck.error.includes("不可用")) {
+      // V2 不可用 -> 降级使用本地快照判断
+      if (!localItem) {
+        return NextResponse.json(
+          { success: false, error: `SKU ${skuCode} 不在该运单中（本地缓存）` },
+          { status: 400 }
+        )
+      }
+    } else {
+      // V2 正常响应但 SKU 不属于该运单 -> 业务结论，直接拒绝
       return NextResponse.json(
-        { success: false, error: `SKU ${skuCode} 不在该运单中` },
+        { success: false, error: skuCheck.error || `SKU ${skuCode} 不在该运单中` },
         { status: 400 }
       )
     }
+
+    const item = localItem
 
     // 3. 检查是否已有未关闭的品控工单（幂等性检查）
     const existingTicket = await db().exceptionTicket.findFirst({

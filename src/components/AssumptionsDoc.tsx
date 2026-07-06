@@ -8,8 +8,8 @@ const assumptions = [
     id: 1,
     title: "分级审批金额阈值",
     content: {
-      assumption: "一级审批阈值 5,000 元，二级审批阈值 20,000 元",
-      reason: "参考国内企业常见审批分级：5,000 元以下为部门级审批，20,000 元以上需要总监/副总经理级审批。此阈值可根据实际业务调整，已配置为可系统配置项。",
+      assumption: "一级审批阈值 5,000 元，二级审批阈值 20,000 元；用于比对的「异常金额」由上报人在 V3 录入",
+      reason: "参考国内企业常见审批分级：5,000 元以下为部门级审批，20,000 元以上需要总监/副总经理级审批。此阈值已配置为可系统配置项（system_config）。\n特别说明（金额数据来源）：V2 的录单解析产出的运单模型不含「金额」字段（解析源为出库单文本，无货值信息），因此本系统不直接依赖 V2 返回金额，而是由上报人在提交异常工单时录入「异常涉及金额 / 运单货值」（存储于 ExceptionTicket.amount），作为分级审批阈值比对与赔付计算的统一依据。这样既能驱动可配置的金额分级，又不强制要求改造 V2 的解析引擎。",
     },
   },
   {
@@ -54,8 +54,8 @@ const assumptions = [
     id: 6,
     title: "V2 数据同步频率与一致性策略",
     content: {
-      assumption: "实时同步（上报异常时同步） + 本地快照缓存（30 分钟内有效）",
-      reason: "选择实时同步而非定时批量同步的理由：异常处理通常需要最新的运单信息（金额、状态等），定时同步可能导致数据不一致。本地快照用于降级展示（V2 不可用时）。",
+      assumption: "实时同步（上报异常时实时调用 V2 接口校验） + 本地只读快照缓存（标注同步时间）",
+      reason: "选择实时校验而非定时批量同步的理由：异常处理必须基于真实存在的运单，定时同步可能造成「凭过期缓存把不存在的运单校验成存在」的伪对接。\n关键降级边界（已在代码中落实）：\n• V2 明确返回「运单不存在 / SKU 不存在」（HTTP 404 或 success:false）——这是业务上的真实结论，V3 直接判为不存在，绝不回退到本地快照去「凑」一个存在的运单；\n• 仅当 V2 整体不可达（网络错误 / 超时 / 5xx）时，才降级到本地快照继续展示，并在前端明确标注「数据可能非最新，获取自某时间」；\n• 本地快照为只读缓存，不回写运单状态，运单状态以 V2 为准。\n每次跨系统调用均生成可追踪 Request ID 并写入接口同步日志表（SyncLog），日志含调用时间、接口名、入参摘要、HTTP 状态码、耗时、错误信息，可按 Request ID 还原完整调用链。",
     },
   },
   {
@@ -197,6 +197,49 @@ export function AssumptionsDoc() {
                 <span>{question}</span>
               </li>
             ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* V2 接口契约与老系统二开意识 */}
+      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-900 mb-4">
+          V2 接口契约与「老系统二开」意识
+        </h2>
+        <div className="space-y-4 text-sm text-slate-600">
+          <p>
+            <strong>接口契约（V3 → V2，均经 HTTP 调用，绝不直连 V2 数据库）：</strong>
+          </p>
+          <ul className="list-inside list-disc space-y-2">
+            <li>
+              <code className="rounded bg-slate-100 px-1 py-0.5">POST /api/v3/orders/validate</code>：校验运单是否存在并返回详情（上报异常时的真实性校验）
+            </li>
+            <li>
+              <code className="rounded bg-slate-100 px-1 py-0.5">POST /api/v3/orders/{"{orderId}"}/validate-sku</code>：校验 SKU 是否归属于指定运单（扫描录入时）
+            </li>
+            <li>
+              <code className="rounded bg-slate-100 px-1 py-0.5">POST /api/v3/orders/sync</code> /{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5">/batch</code>：按条件查询 / 批量获取运单（本地快照初始化与增量同步）
+            </li>
+          </ul>
+          <p>
+            <strong>鉴权：</strong>所有 V2 对外接口要求 <code className="rounded bg-slate-100 px-1 py-0.5">X-API-Key</code> 请求头，与 V2 本地配置的{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5">V2_API_KEY</code> 一致才放行，否则返回 401。不是裸奔的开放接口。
+          </p>
+          <p>
+            <strong>不破坏 V2 现有调用方的前提下新增接口（二开意识）：</strong>
+          </p>
+          <ul className="list-inside list-disc space-y-2">
+            <li>
+              <strong>独立版本前缀隔离：</strong>新增接口统一挂在 <code className="rounded bg-slate-100 px-1 py-0.5">/api/v3/*</code> 路由下，与 V2 既有的{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5">/api/parse</code>、<code className="rounded bg-slate-100 px-1 py-0.5">/api/orders</code> 等完全隔离，新增鉴权逻辑不影响原有调用方。
+            </li>
+            <li>
+              <strong>向后兼容与字段演进：</strong>若 V2 运单金额字段类型从 <code className="rounded bg-slate-100 px-1 py-0.5">int</code> 改为 <code className="rounded bg-slate-100 px-1 py-0.5">decimal</code>，V3 侧用 <code className="rounded bg-slate-100 px-1 py-0.5">number</code> 接收并在序列化时统一处理，且在响应解析层对字段缺失做兜底（缺省为 null），不会因新增/变更字段而整体报错。
+            </li>
+            <li>
+              <strong>灰度与回滚：</strong>接口返回结构以 <code className="rounded bg-slate-100 px-1 py-0.5">success</code> 字段表达业务结果，V3 对「明确不存在（404）」与「服务不可用（超时/5xx）」分别处理，新增字段不影响旧调用。
+            </li>
           </ul>
         </div>
       </div>

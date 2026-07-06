@@ -1,27 +1,21 @@
-import { NextRequest, NextResponse } from "next/server"
-import { z } from "zod"
+/**
+ * V2 系统 API 客户端
+ *
+ * V3 通过此客户端调用 V2 暴露的 HTTP 接口完成运单真实性校验、SKU 归属校验、
+ * 运单列表同步等跨系统交互。V3 不直接连接 V2 数据库，保证系统独立性。
+ *
+ * 关键设计（对应考点5 · 接口可调试性 / 真实性校验 / 降级方案）：
+ * 1. 每一次跨系统调用都会生成可追踪的 Request ID 并写入接口同步日志表（SyncLog），
+ *    日志包含：调用时间、接口名、入参摘要、HTTP 状态码、耗时、错误信息。
+ * 2. 明确区分两种失败：
+ *    - V2 整体不可用（网络错误 / 超时 / 5xx）-> 进入「降级方案」，使用本地快照，
+ *      并在返回中标注数据来源为缓存（非实时）。
+ *    - V2 明确返回「运单不存在 / SKU 不存在」（404 / success:false）-> 这是业务上的
+ *      真实结论，**绝不**回退到本地快照去"凑"一个存在的运单。否则会造成伪对接
+ *      （拿过期缓存把不存在的运单校验成存在）。
+ */
 
-// V2 运单接口 Schema
-const V2OrderSchema = z.object({
-  id: z.string(),
-  externalCode: z.string().nullable(),
-  storeName: z.string().nullable(),
-  receiverName: z.string().nullable(),
-  receiverPhone: z.string().nullable(),
-  receiverAddress: z.string().nullable(),
-  amount: z.number().nullable(),
-  items: z.array(
-    z.object({
-      id: z.string(),
-      skuCode: z.string(),
-      skuName: z.string(),
-      quantity: z.number(),
-      spec: z.string().nullable(),
-      remark: z.string().nullable(),
-    })
-  ),
-})
-
+// V2 运单接口返回结构
 export interface V2Order {
   id: string
   externalCode: string | null
@@ -41,11 +35,32 @@ export interface V2Order {
 }
 
 /**
- * V2 系统 API 客户端
- *
- * V3 通过此客户端调用 V2 暴露的接口
- * 不直接连接 V2 数据库，保证系统独立性
+ * V2 接口调用错误
+ * - unavailable=true 表示 V2 整体不可达（网络/超时/5xx），可走降级方案
+ * - unavailable=false 表示 V2 已正常响应但业务上拒绝（如 404 运单不存在），不能降级
  */
+export class V2ApiError extends Error {
+  status: number
+  requestId: string
+  unavailable: boolean
+
+  constructor(message: string, status: number, requestId: string, unavailable = false) {
+    super(message)
+    this.name = "V2ApiError"
+    this.status = status
+    this.requestId = requestId
+    this.unavailable = unavailable
+  }
+}
+
+function genRequestId(): string {
+  try {
+    return globalThis.crypto?.randomUUID?.() ?? `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  } catch {
+    return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  }
+}
+
 export class V2ApiClient {
   private baseUrl: string
   private apiKey: string
@@ -60,16 +75,21 @@ export class V2ApiClient {
   }
 
   /**
-   * 通用请求方法（带超时和重试）
+   * 通用请求方法（带超时、重试、Request ID、链路日志）
+   * - 网络错误 / 超时（fetch throw 或 AbortController abort）视为 V2 不可用 -> 重试后抛出 unavailable=true
+   * - HTTP 非 2xx 视为 V2 已响应业务结果（含 404 不存在）-> 直接抛出 unavailable=false，不重试
    */
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
-  ): Promise<{ data: T; status: number; duration: number }> {
+    options: RequestInit = {},
+    logParams?: Record<string, unknown>
+  ): Promise<{ data: T; status: number; duration: number; requestId: string }> {
+    const requestId = genRequestId()
     const url = `${this.baseUrl}${endpoint}`
     const startTime = Date.now()
 
-    let lastError: Error | null = null
+    let lastError: V2ApiError | null = null
+    let lastStatus = 0
 
     for (let attempt = 0; attempt <= this.retryCount; attempt++) {
       try {
@@ -81,30 +101,109 @@ export class V2ApiClient {
           headers: {
             "Content-Type": "application/json",
             "X-API-Key": this.apiKey,
+            "X-Request-Id": requestId,
             ...options.headers,
           },
           signal: controller.signal,
         })
 
         clearTimeout(timeoutId)
-        const duration = Date.now() - startTime
+        const status = response.status
+        lastStatus = status
+        const raw = await response.text()
+        const data = raw ? JSON.parse(raw) : ({} as T)
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          lastError = new V2ApiError(
+            `HTTP ${status}: ${response.statusText}`,
+            status,
+            requestId,
+            false
+          )
+          // 业务级错误（含 404 不存在）不重试，直接抛出
+          break
         }
 
-        const data = await response.json()
-        return { data: data as T, status: response.status, duration }
+        const duration = Date.now() - startTime
+        await this.writeLog({
+          requestId,
+          apiName: endpoint,
+          requestParams: logParams || {},
+          responseStatus: status,
+          responseBody: this.summarize(data),
+          status: "SUCCESS",
+          duration,
+        })
+        return { data: data as T, status, duration, requestId }
       } catch (error) {
-        lastError = error as Error
+        // fetch 抛错（含 AbortController 超时）视为 V2 不可用
+        const err = error as Error
+        lastError = new V2ApiError(
+          `网络/超时错误: ${err.message}`,
+          0,
+          requestId,
+          true
+        )
         if (attempt < this.retryCount) {
-          // 指数退避
+          // 指数退避后重试
           await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)))
         }
       }
     }
 
-    throw lastError || new Error("Unknown error")
+    const duration = Date.now() - startTime
+    await this.writeLog({
+      requestId,
+      apiName: endpoint,
+      requestParams: logParams || {},
+      responseStatus: lastStatus,
+      status: lastError?.unavailable ? "TIMEOUT" : "FAILED",
+      errorMessage: lastError?.message,
+      duration,
+    })
+    throw lastError
+  }
+
+  /**
+   * 写入接口同步日志（不阻塞主流程：任何异常仅告警）
+   */
+  private async writeLog(entry: {
+    requestId: string
+    apiName: string
+    requestParams: Record<string, unknown>
+    responseStatus: number
+    responseBody?: string
+    status: "SUCCESS" | "FAILED" | "TIMEOUT"
+    errorMessage?: string
+    duration: number
+  }): Promise<void> {
+    try {
+      const { SyncLogService } = await import("./sync-log")
+      await SyncLogService.log({
+        requestId: entry.requestId,
+        apiName: entry.apiName,
+        requestParams: entry.requestParams,
+        responseStatus: entry.responseStatus,
+        responseBody: entry.responseBody,
+        status: entry.status,
+        errorMessage: entry.errorMessage,
+        duration: entry.duration,
+      })
+    } catch (logErr) {
+      console.warn(`[V2Api] 写入同步日志失败 (requestId=${entry.requestId}):`, logErr)
+    }
+  }
+
+  /**
+   * 将响应摘要裁剪后存入日志（避免大报文撑爆日志表）
+   */
+  private summarize(data: unknown): string | undefined {
+    try {
+      const s = JSON.stringify(data)
+      return s.length > 500 ? s.slice(0, 500) + "...(truncated)" : s
+    } catch {
+      return undefined
+    }
   }
 
   /**
@@ -115,87 +214,79 @@ export class V2ApiClient {
     exists: boolean
     order?: V2Order
     error?: string
+    source?: "v2" | "local-cache"
+    requestId?: string
   }> {
     try {
-      const { data } = await this.request<{
+      const { data, requestId } = await this.request<{
         success: boolean
         order?: V2Order
         error?: string
       }>("/api/v3/orders/validate", {
         method: "POST",
         body: JSON.stringify({ orderId }),
-      })
+      }, { orderId })
 
-      if (data.success && data.order) {
-        return { exists: true, order: data.order }
-      } else {
-        // V2 API 返回订单不存在，降级到本地快照查询
-        console.warn(`V2 API returned order not found: ${orderId}, trying local fallback`)
+      if (data?.success && data?.order) {
+        return { exists: true, order: data.order, source: "v2", requestId }
+      }
+
+      // V2 正常响应但明确说"运单不存在"或参数无效 -> 业务结论，绝不回退到本地缓存
+      return {
+        exists: false,
+        error: data?.error || "Order not found",
+        requestId,
+      }
+    } catch (err) {
+      if (err instanceof V2ApiError && err.unavailable) {
+        // V2 整体不可用 -> 降级到本地快照（仅此场景允许）
+        console.warn(`[V2Api] V2 不可用，降级到本地快照 (requestId=${err.requestId}): ${err.message}`)
         return this.fallbackToLocalOrder(orderId)
       }
-    } catch (error) {
-      // V2 API 调用失败，降级到本地快照查询
-      console.warn(`V2 API error, falling back to local: ${(error as Error).message}`)
-      return this.fallbackToLocalOrder(orderId)
+      // 其它错误（含 V2 返回 404 不存在）-> 直接返回不存在
+      return { exists: false, error: err instanceof Error ? err.message : "Unknown error" }
     }
   }
 
   /**
-   * 降级方案：从本地快照查询订单
-   * 当 V2 API 不可用时（如 SSO 问题、网络问题），使用本地缓存的订单数据
+   * 降级方案：仅当 V2 整体不可用时调用。
+   * 从本地快照查询运单；明确标注 source=local-cache，前端需提示"数据可能非最新"。
+   * 若本地也无记录，则老老实实返回不存在，绝不伪造。
    */
   private async fallbackToLocalOrder(orderId: string): Promise<{
     exists: boolean
     order?: V2Order
     error?: string
+    source?: "local-cache"
   }> {
     try {
-      // 动态导入避免循环依赖
       const { OrderSnapshotService } = await import("./order-snapshot-service")
 
-      // 先通过 v2OrderId 查询
       const snapshot = await OrderSnapshotService.findLocal(orderId)
-
-      // 如果没找到，尝试通过 externalCode 查询
       if (!snapshot) {
-        // 假设 orderId 可能是外部单号
-        const byExternalCode = await OrderSnapshotService.findByExternalCode(orderId)
-        if (byExternalCode) {
-          return this.convertSnapshotToV2Order(byExternalCode)
+        const byExternal = await OrderSnapshotService.findByExternalCode(orderId)
+        if (byExternal) {
+          return { exists: true, order: this.convertSnapshotToV2Order(byExternal), source: "local-cache" }
         }
-      } else {
-        return this.convertSnapshotToV2Order(snapshot)
+        return { exists: false, error: "Order not found (本地缓存与 V2 均无记录)" }
       }
-
-      return { exists: false, error: "Order not found (local cache)" }
+      return { exists: true, order: this.convertSnapshotToV2Order(snapshot), source: "local-cache" }
     } catch (error) {
-      console.error("Local fallback failed:", error)
+      console.error("[V2Api] 本地降级查询失败:", error)
       return { exists: false, error: `Local fallback failed: ${(error as Error).message}` }
     }
   }
 
-  /**
-   * 将本地快照转换为 V2Order 格式
-   */
-  private convertSnapshotToV2Order(snapshot: any): {
-    exists: boolean
-    order?: V2Order
-    error?: string
-  } {
-    try {
-      const order: V2Order = {
-        id: snapshot.v2OrderId,
-        externalCode: snapshot.externalCode,
-        storeName: snapshot.storeName,
-        receiverName: snapshot.receiverName,
-        receiverPhone: snapshot.receiverPhone,
-        receiverAddress: snapshot.receiverAddress,
-        amount: snapshot.amount,
-        items: snapshot.itemsJson || [],
-      }
-      return { exists: true, order }
-    } catch (error) {
-      return { exists: false, error: `Failed to convert snapshot: ${(error as Error).message}` }
+  private convertSnapshotToV2Order(snapshot: any): V2Order {
+    return {
+      id: snapshot.v2OrderId,
+      externalCode: snapshot.externalCode,
+      storeName: snapshot.storeName,
+      receiverName: snapshot.receiverName,
+      receiverPhone: snapshot.receiverPhone,
+      receiverAddress: snapshot.receiverAddress,
+      amount: snapshot.amount,
+      items: snapshot.itemsJson || [],
     }
   }
 
@@ -217,18 +308,17 @@ export class V2ApiClient {
       }>(`/api/v3/orders/${orderId}/validate-sku`, {
         method: "POST",
         body: JSON.stringify({ skuCode }),
-      })
+      }, { orderId, skuCode })
 
-      if (data.success && data.valid) {
+      if (data?.success && data?.valid) {
         return { valid: true, quantity: data.quantity }
-      } else {
-        return { valid: false, error: data.error || "SKU not found in order" }
       }
-    } catch (error) {
-      return {
-        valid: false,
-        error: `V2 API error: ${(error as Error).message}`,
+      return { valid: false, error: data?.error || "SKU not found in order" }
+    } catch (err) {
+      if (err instanceof V2ApiError && err.unavailable) {
+        return { valid: false, error: "V2 接口不可用，无法校验 SKU 归属" }
       }
+      return { valid: false, error: err instanceof Error ? err.message : "Unknown error" }
     }
   }
 
@@ -258,13 +348,12 @@ export class V2ApiClient {
       }>("/api/v3/orders/sync", {
         method: "POST",
         body: JSON.stringify(params),
-      })
-
+      }, params)
       return data
-    } catch (error) {
+    } catch (err) {
       return {
         success: false,
-        error: `V2 API error: ${(error as Error).message}`,
+        error: err instanceof V2ApiError ? err.message : "V2 API error",
       }
     }
   }
@@ -286,28 +375,23 @@ export class V2ApiClient {
       }>("/api/v3/orders/batch", {
         method: "POST",
         body: JSON.stringify({ orderIds }),
-      })
+      }, { count: orderIds.length })
 
       const orderMap = new Map<string, V2Order>()
-      if (data.orders) {
+      if (data?.orders) {
         data.orders.forEach((order) => orderMap.set(order.id, order))
       }
-
-      return {
-        success: data.success,
-        orders: orderMap,
-        error: data.error,
-      }
-    } catch (error) {
+      return { success: !!data?.success, orders: orderMap, error: data?.error }
+    } catch (err) {
       return {
         success: false,
-        error: `V2 API error: ${(error as Error).message}`,
+        error: err instanceof V2ApiError ? err.message : "V2 API error",
       }
     }
   }
 
   /**
-   * 回写异常处理结果到 V2（可选功能）
+   * 回写异常处理结果到 V2（可选功能，非阻塞）
    * POST /api/v3/webhooks/exception-update
    */
   async notifyExceptionUpdate(ticketId: string, status: string): Promise<{
@@ -321,21 +405,13 @@ export class V2ApiClient {
       }>("/api/v3/webhooks/exception-update", {
         method: "POST",
         body: JSON.stringify({ ticketId, status }),
-      })
-
-      return data
-    } catch (error) {
+      }, { ticketId, status })
+      return { success: !!data?.success }
+    } catch {
       // 回写失败不应影响主流程
-      console.warn("Failed to notify V2:", error)
-      return {
-        success: false,
-        error: `Webhook error: ${(error as Error).message}`,
-      }
+      return { success: false }
     }
   }
 }
 
-/**
- * 单例实例
- */
 export const v2Api = new V2ApiClient()

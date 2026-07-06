@@ -34,6 +34,7 @@ export function ExceptionReport() {
   const [selectedType, setSelectedType] = useState("")
   const [description, setDescription] = useState("")
   const [submittedBy, setSubmittedBy] = useState("")
+  const [amount, setAmount] = useState("")
 
   // 搜索订单
   const handleSearch = async () => {
@@ -106,6 +107,7 @@ export function ExceptionReport() {
           category: selectedType,
           description,
           submittedBy,
+          amount: parseFloat(amount) || 0,
         }),
       })
 
@@ -210,6 +212,26 @@ export function ExceptionReport() {
           <h2 className="text-lg font-semibold text-slate-900 mb-4">创建异常工单</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                异常涉及金额 / 运单货值（元）*
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="用于驱动分级审批阈值（如 >20000 进入二级审批）"
+                className="w-full rounded-lg border border-slate-300 px-4 py-2 focus:border-teal-500 focus:outline-none"
+                required
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                注：V2 解析的运单不含金额字段，金额由上报人在此处录入，
+                作为分级审批与赔付计算依据（详见《需求理解与假设说明》第①项）
+              </p>
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 异常类型 *

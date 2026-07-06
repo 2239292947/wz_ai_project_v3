@@ -1,4 +1,5 @@
 import { db } from "@/lib/prisma"
+import type { Prisma } from "@/generated/prisma"
 import { SystemConfigService } from "./system-config"
 
 /**
@@ -10,6 +11,7 @@ export class SyncLogService {
    * 记录接口调用
    */
   static async log(data: {
+    requestId?: string
     apiName: string
     requestParams: Record<string, unknown>
     responseStatus: number
@@ -20,8 +22,9 @@ export class SyncLogService {
   }): Promise<void> {
     await db().syncLog.create({
       data: {
+        requestId: data.requestId,
         apiName: data.apiName,
-        requestParams: data.requestParams,
+        requestParams: data.requestParams as Prisma.InputJsonValue,
         responseStatus: data.responseStatus,
         responseBody: data.responseBody,
         status: data.status,
