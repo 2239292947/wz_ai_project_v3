@@ -6,6 +6,7 @@ import { OrderSnapshotService } from "@/lib/order-snapshot-service"
 
 interface Order {
   id: string
+  v2OrderId: string
   externalCode: string | null
   storeName: string | null
   receiverName: string | null

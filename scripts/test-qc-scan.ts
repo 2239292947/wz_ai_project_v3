@@ -3,7 +3,7 @@
  *
  * 模拟完整的扫描品控 -> 创建工单流程
  */
-import { PrismaClient } from "../src/generated/prisma"
+import { PrismaClient } from "@prisma/client"
 import { v2Api } from "../src/lib/v2-api"
 import { qcRuleEngine } from "../src/lib/qc-rules"
 import { SyncLogService } from "../src/lib/sync-log"

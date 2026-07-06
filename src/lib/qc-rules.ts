@@ -1,6 +1,15 @@
 import { prisma } from "@/lib/prisma"
 
 /**
+ * 品控规则检查结果
+ */
+export interface QCRuleResult {
+  triggered: boolean
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+  description: string
+}
+
+/**
  * 品控规则引擎
  * 根据可配置的品控规则自动判定扫描结果
  */
@@ -17,6 +26,9 @@ export class QCRuleEngine {
   private registerBuiltinRules(): void {
     // 数量差异规则
     this.rules.set("quantity_diff_percent", (data) => {
+      if (!data.ruleConfig) {
+        return { triggered: false, severity: "LOW", description: "规则配置缺失" }
+      }
       const threshold = data.ruleConfig.threshold as number
       const diffPercent = Math.abs(
         ((data.scannedQuantity - data.expectedQuantity) / data.expectedQuantity) * 100
@@ -39,6 +51,9 @@ export class QCRuleEngine {
 
     // 破损等级规则
     this.rules.set("damage_level", (data) => {
+      if (!data.ruleConfig) {
+        return { triggered: false, severity: "LOW", description: "规则配置缺失" }
+      }
       const threshold = data.ruleConfig.threshold as number
       const damageLevel = data.damageLevel || 0
 
@@ -51,6 +66,9 @@ export class QCRuleEngine {
 
     // 规格不符规则
     this.rules.set("spec_mismatch", (data) => {
+      if (!data.ruleConfig) {
+        return { triggered: false, severity: "LOW", description: "规则配置缺失" }
+      }
       const threshold = data.ruleConfig.threshold as number
       const tolerance = threshold / 100
       const expectedSpec = data.expectedSpec || ""

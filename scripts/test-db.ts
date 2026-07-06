@@ -1,7 +1,7 @@
 /**
  * 简化测试脚本：验证数据库连接和系统配置
  */
-import { PrismaClient } from "../src/generated/prisma"
+import { PrismaClient } from "@prisma/client"
 
 const prisma = new PrismaClient()
 

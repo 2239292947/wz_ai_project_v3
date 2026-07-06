@@ -3,7 +3,7 @@
  *
  * 模拟审批超时和品控暂扣超时的自动处理
  */
-import { PrismaClient } from "../src/generated/prisma"
+import { PrismaClient } from "@prisma/client"
 import { ApprovalEngine } from "../src/lib/approval-engine"
 import { QCHoldTimeoutService } from "../src/lib/approval-engine"
 

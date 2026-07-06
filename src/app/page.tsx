@@ -1,10 +1,4 @@
 import Link from "next/link"
-import { ScanOperation } from "@/components/ScanOperation"
-import { ExceptionReport } from "@/components/ExceptionReport"
-import { TicketList } from "@/components/TicketList"
-import { QCRules } from "@/components/QCRules"
-import { SystemMonitor } from "@/components/SystemMonitor"
-import { AssumptionsDoc } from "@/components/AssumptionsDoc"
 import { Package, FileText, AlertTriangle, Shield, BarChart3, Settings } from "lucide-react"
 
 export default function HomePage() {

@@ -3,7 +3,7 @@
  *
  * 模拟完整的分级审批流程
  */
-import { PrismaClient } from "../src/generated/prisma"
+import { PrismaClient } from "@prisma/client"
 import { ApprovalEngine } from "../src/lib/approval-engine"
 
 const prisma = new PrismaClient()

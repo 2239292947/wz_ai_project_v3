@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import type { Prisma } from "@prisma/client"
 import { SystemConfigService } from "./system-config"
 import { v2Api } from "./v2-api"
 import { SyncLogService } from "./sync-log"
@@ -119,7 +120,7 @@ export class ApprovalEngine {
     }
 
     // 3. 在事务中执行审批逻辑
-    return await prisma.$transaction(async (tx) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // 重新读取工单（事务内）
       const currentTicket = await tx.exceptionTicket.findUnique({
         where: { id: ticketId },

@@ -3,7 +3,7 @@
  *
  * 模拟手工上报异常流程
  */
-import { PrismaClient } from "../src/generated/prisma"
+import { PrismaClient } from "@prisma/client"
 import { v2Api } from "../src/lib/v2-api"
 import { OrderSnapshotService } from "../src/lib/order-snapshot-service"
 
