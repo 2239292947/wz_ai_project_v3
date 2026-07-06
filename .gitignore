@@ -9,3 +9,4 @@ coverage
 .next
 src/generated
 .claude/worktrees/fix-vercel-postinstall/
+/.claude/worktrees/fix-prisma-initialization

@@ -1,10 +1,11 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run vercel-build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
   "regions": ["iad1"],
   "env": {
-    "NEXT_PUBLIC_APP_URL": "https://wz-ai-project-v3-dilghbi39-2239292947s-projects.vercel.app"
+    "NEXT_PUBLIC_APP_URL": "https://wz-ai-project-v3-dilghbi39-2239292947s-projects.vercel.app",
+    "NODE_ENV": "production"
   }
 }
