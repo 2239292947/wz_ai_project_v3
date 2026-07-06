@@ -7,42 +7,42 @@ export default function HomePage() {
       id: "scan",
       name: "扫描操作与品控",
       icon: Package,
-      description: "模块零：扫描录入、品控检测、批次锁定",
+      description: "扫描录入、品控检测、批次锁定",
       color: "bg-teal-500",
     },
     {
       id: "exception",
       name: "异常工单上报",
       icon: FileText,
-      description: "模块一：手工上报物流异常",
+      description: "手工上报物流异常",
       color: "bg-blue-500",
     },
     {
       id: "approval",
       name: "分级审批流程",
       icon: Shield,
-      description: "模块二：工单审批、超时处理、并发控制",
+      description: "工单审批、超时处理、并发控制",
       color: "bg-purple-500",
     },
     {
       id: "tickets",
       name: "工单列表追踪",
       icon: AlertTriangle,
-      description: "模块四：工单查询、筛选、状态追踪",
+      description: "工单查询、筛选、状态追踪",
       color: "bg-orange-500",
     },
     {
       id: "monitor",
       name: "系统监控",
       icon: BarChart3,
-      description: "模块五：接口同步状态、数据一致性监控",
+      description: "接口同步状态、数据一致性监控",
       color: "bg-green-500",
     },
     {
       id: "assumptions",
       name: "假设说明文档",
       icon: Settings,
-      description: "模块六：需求理解与假设说明",
+      description: "需求理解与假设说明",
       color: "bg-gray-600",
     },
   ]
@@ -55,16 +55,16 @@ export default function HomePage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-slate-900">
-                V3 运单全流程管理系统
+                V3 Order Management System
               </h1>
               <p className="mt-2 text-slate-600">
-                录单 → 扫描品控 → 异常上报 → 分级审批 → 执行联动
+                Order Entry → Scan QC → Exception Report → Approval → Execution
               </p>
             </div>
             <div className="flex items-center gap-4">
               <div className="text-right">
-                <p className="text-sm text-slate-500">数据库状态</p>
-                <p className="text-sm font-medium text-teal-600">● 已连接</p>
+                <p className="text-sm text-slate-500">Database Status</p>
+                <p className="text-sm font-medium text-teal-600">● Connected</p>
               </div>
             </div>
           </div>
@@ -103,12 +103,12 @@ export default function HomePage() {
 
         {/* Quick Stats */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <h2 className="text-xl font-semibold text-slate-900 mb-4">系统状态</h2>
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">System Status</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="待审批" value="0" color="text-orange-600" />
-            <StatCard title="处理中" value="0" color="text-blue-600" />
-            <StatCard title="已完成" value="0" color="text-green-600" />
-            <StatCard title="品控暂扣" value="0" color="text-red-600" />
+            <StatCard title="Pending Approval" value="0" color="text-orange-600" />
+            <StatCard title="Processing" value="0" color="text-blue-600" />
+            <StatCard title="Completed" value="0" color="text-green-600" />
+            <StatCard title="QC Hold" value="0" color="text-red-600" />
           </div>
         </div>
       </main>
