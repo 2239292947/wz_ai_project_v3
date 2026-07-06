@@ -1,6 +1,7 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  // 使用默认输出路径（node_modules/.prisma/client），确保 Vercel 部署兼容性
+  // 不要自定义 output 路径，避免 serverless 环境初始化问题
 }
 
 datasource db {
