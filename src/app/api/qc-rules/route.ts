@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 
 /**
  * 获取品控规则列表
@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma"
  */
 export async function GET(request: NextRequest) {
   try {
-    const rules = await prisma.qCRule.findMany({
+    const rules = await db().qCRule.findMany({
       orderBy: { createdAt: "desc" },
     })
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    const rule = await prisma.qCRule.create({
+    const rule = await db().qCRule.create({
       data: {
         name: body.name,
         code: body.code,

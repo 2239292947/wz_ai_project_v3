@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 import { v2Api } from "@/lib/v2-api"
 import { SyncLogService } from "@/lib/sync-log"
 import { OrderSnapshotService } from "@/lib/order-snapshot-service"
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. 检查是否已有未关闭的品控工单（幂等性检查）
-    const existingTicket = await prisma.exceptionTicket.findFirst({
+    const existingTicket = await db().exceptionTicket.findFirst({
       where: {
         orderSnapshotId: snapshot.id,
         exceptionType: "QC",
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     if (existingTicket) {
       // 已存在未关闭工单，只追加扫描记录
-      const scanRecord = await prisma.scanRecord.create({
+      const scanRecord = await db().scanRecord.create({
         data: {
           scanId: `SCAN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           orderSnapshotId: snapshot.id,
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     const batchStatus = qcResult.passed ? "NORMAL" : "QC_HOLD"
 
     // 6. 创建扫描记录
-    const scanRecord = await prisma.scanRecord.create({
+    const scanRecord = await db().scanRecord.create({
       data: {
         scanId: `SCAN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         orderSnapshotId: snapshot.id,
@@ -119,11 +119,11 @@ export async function POST(request: NextRequest) {
     // 7. 如果品控异常，自动创建工单
     let ticket = null
     if (!qcResult.passed && qcResult.shouldCreateTicket) {
-      const maxResubmit = await prisma.systemConfig.findUnique({
+      const maxResubmit = await db().systemConfig.findUnique({
         where: { configKey: "approval.resubmit.max_count" },
       })
 
-      ticket = await prisma.exceptionTicket.create({
+      ticket = await db().exceptionTicket.create({
         data: {
           ticketNo: `QC-${Date.now()}`,
           orderSnapshotId: snapshot.id,
@@ -140,14 +140,14 @@ export async function POST(request: NextRequest) {
       })
 
       // 更新扫描记录的工单关联
-      await prisma.scanRecord.update({
+      await db().scanRecord.update({
         where: { id: scanRecord.id },
         data: { ticketId: ticket.id },
       })
 
       // 如果是严重异常，强制升级到二级审批
       if (qcResult.results[0]?.severity === "CRITICAL") {
-        await prisma.exceptionTicket.update({
+        await db().exceptionTicket.update({
           where: { id: ticket.id },
           data: {
             status: "LEVEL2_APPROVING",
@@ -187,7 +187,7 @@ export async function GET(request: NextRequest) {
 
     const where: any = {}
     if (orderId) {
-      const snapshot = await prisma.orderSnapshot.findUnique({
+      const snapshot = await db().orderSnapshot.findUnique({
         where: { v2OrderId: orderId },
       })
       if (snapshot) {
@@ -199,7 +199,7 @@ export async function GET(request: NextRequest) {
     }
 
     const [records, total] = await Promise.all([
-      prisma.scanRecord.findMany({
+      db().scanRecord.findMany({
         where,
         include: {
           orderSnapshot: true,
@@ -209,7 +209,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      prisma.scanRecord.count({ where }),
+      db().scanRecord.count({ where }),
     ])
 
     return NextResponse.json({

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 
 /**
  * 查询单个工单详情
@@ -12,7 +12,7 @@ export async function GET(
   try {
     const { id } = await params
 
-    const ticket = await prisma.exceptionTicket.findUnique({
+    const ticket = await db().exceptionTicket.findUnique({
       where: { id },
       include: {
         orderSnapshot: true,
@@ -57,7 +57,7 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    const ticket = await prisma.exceptionTicket.update({
+    const ticket = await db().exceptionTicket.update({
       where: { id },
       data: body,
     })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 import { v2Api } from "@/lib/v2-api"
 import { SyncLogService } from "@/lib/sync-log"
 import { OrderSnapshotService } from "@/lib/order-snapshot-service"
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     const snapshot = syncResult.snapshot
 
     // 2. 检查是否已有同类型未关闭工单
-    const existingTicket = await prisma.exceptionTicket.findFirst({
+    const existingTicket = await db().exceptionTicket.findFirst({
       where: {
         orderSnapshotId: snapshot.id,
         exceptionType,
@@ -60,12 +60,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. 获取系统配置
-    const maxResubmitConfig = await prisma.systemConfig.findUnique({
+    const maxResubmitConfig = await db().systemConfig.findUnique({
       where: { configKey: "approval.resubmit.max_count" },
     })
 
     // 4. 创建工单
-    const ticket = await prisma.exceptionTicket.create({
+    const ticket = await db().exceptionTicket.create({
       data: {
         ticketNo: `${exceptionType === "QC" ? "QC" : "LOG"}-${Date.now()}`,
         orderSnapshotId: snapshot.id,
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
     }
     if (orderNo) {
       // 通过订单快照关联查询
-      const snapshot = await prisma.orderSnapshot.findFirst({
+      const snapshot = await db().orderSnapshot.findFirst({
         where: {
           OR: [
             { externalCode: { contains: orderNo } },
@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
     }
 
     const [tickets, total] = await Promise.all([
-      prisma.exceptionTicket.findMany({
+      db().exceptionTicket.findMany({
         where,
         include: {
           orderSnapshot: {
@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      prisma.exceptionTicket.count({ where }),
+      db().exceptionTicket.count({ where }),
     ])
 
     return NextResponse.json({

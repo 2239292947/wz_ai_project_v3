@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 
 export type InventoryChangeType =
   | "COMPENSATION_DEDUCT"
@@ -26,7 +26,7 @@ export class InventoryService {
     operator: string
     remark: string
   }): Promise<void> {
-    await prisma.inventoryRecord.create({
+    await db().inventoryRecord.create({
       data,
     })
   }
@@ -52,7 +52,7 @@ export class InventoryService {
     const skip = (page - 1) * pageSize
 
     const [records, total] = await Promise.all([
-      prisma.inventoryRecord.findMany({
+      db().inventoryRecord.findMany({
         where: {
           ...(where.skuCode && { skuCode: where.skuCode }),
           ...(where.warehouseId && { warehouseId: where.warehouseId }),
@@ -64,7 +64,7 @@ export class InventoryService {
         skip,
         take: pageSize,
       }),
-      prisma.inventoryRecord.count({
+      db().inventoryRecord.count({
         where: {
           ...(where.skuCode && { skuCode: where.skuCode }),
           ...(where.warehouseId && { warehouseId: where.warehouseId }),
@@ -87,7 +87,7 @@ export class InventoryService {
    * 查询 SKU 当前库存总量
    */
   static async getSKUTotal(skuCode: string, warehouseId?: string): Promise<number> {
-    const result = await prisma.inventoryRecord.aggregate({
+    const result = await db().inventoryRecord.aggregate({
       where: {
         skuCode,
         ...(warehouseId && { warehouseId }),
@@ -104,7 +104,7 @@ export class InventoryService {
    * 根据票证 ID 查询所有相关库存变更
    */
   static async getByTicketId(ticketId: string): Promise<any[]> {
-    return prisma.inventoryRecord.findMany({
+    return db().inventoryRecord.findMany({
       where: { ticketId },
       orderBy: { createdAt: "asc" },
     })

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 import { SystemConfigService } from "./system-config"
 import { v2Api } from "./v2-api"
 import { SyncLogService } from "./sync-log"
@@ -39,7 +39,7 @@ export class OrderSnapshotService {
       const order = result.order
 
       // 2. 保存到本地快照
-      const snapshot = await prisma.orderSnapshot.upsert({
+      const snapshot = await db().orderSnapshot.upsert({
         where: { v2OrderId: order.id },
         create: {
           v2OrderId: order.id,
@@ -132,7 +132,7 @@ export class OrderSnapshotService {
       // 批量保存
       for (const order of result.orders) {
         try {
-          await prisma.orderSnapshot.upsert({
+          await db().orderSnapshot.upsert({
             where: { v2OrderId: order.id },
             create: {
               v2OrderId: order.id,
@@ -195,7 +195,7 @@ export class OrderSnapshotService {
    * 查询本地快照（降级方案）
    */
   static async findLocal(v2OrderId: string): Promise<any | null> {
-    return prisma.orderSnapshot.findUnique({
+    return db().orderSnapshot.findUnique({
       where: { v2OrderId },
     })
   }
@@ -204,7 +204,7 @@ export class OrderSnapshotService {
    * 根据外部单号查询快照
    */
   static async findByExternalCode(externalCode: string): Promise<any | null> {
-    return prisma.orderSnapshot.findFirst({
+    return db().orderSnapshot.findFirst({
       where: { externalCode },
     })
   }

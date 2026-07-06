@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 
 /**
  * 品控规则检查结果
@@ -109,7 +109,7 @@ export class QCRuleEngine {
    */
   async checkRules(data: QCRuleCheckData): Promise<QCRuleCheckResult[]> {
     // 从数据库加载启用的规则
-    const rules = await prisma.qCRule.findMany({
+    const rules = await db().qCRule.findMany({
       where: { isActive: true, exceptionType: data.exceptionType },
     })
 

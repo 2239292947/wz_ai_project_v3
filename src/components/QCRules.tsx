@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Plus } from "lucide-react"
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 
 interface QCRule {
   id: string

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 import { SystemConfigService } from "./system-config"
 
 /**
@@ -18,7 +18,7 @@ export class SyncLogService {
     errorMessage?: string
     duration: number
   }): Promise<void> {
-    await prisma.syncLog.create({
+    await db().syncLog.create({
       data: {
         apiName: data.apiName,
         requestParams: data.requestParams,
@@ -41,7 +41,7 @@ export class SyncLogService {
   }): Promise<any[]> {
     const { limit = 50 } = filters
 
-    return prisma.syncLog.findMany({
+    return db().syncLog.findMany({
       where: {
         ...(filters.apiName && { apiName: filters.apiName }),
         ...(filters.status && { status: filters.status }),
@@ -65,15 +65,15 @@ export class SyncLogService {
     const where = since ? { createdAt: { gte: since } } : {}
 
     const [total, success, failed, timeout, avgDurationResult, lastSync] = await Promise.all([
-      prisma.syncLog.count({ where }),
-      prisma.syncLog.count({ where: { ...where, status: "SUCCESS" } }),
-      prisma.syncLog.count({ where: { ...where, status: "FAILED" } }),
-      prisma.syncLog.count({ where: { ...where, status: "TIMEOUT" } }),
-      prisma.syncLog.aggregate({
+      db().syncLog.count({ where }),
+      db().syncLog.count({ where: { ...where, status: "SUCCESS" } }),
+      db().syncLog.count({ where: { ...where, status: "FAILED" } }),
+      db().syncLog.count({ where: { ...where, status: "TIMEOUT" } }),
+      db().syncLog.aggregate({
         where,
         _avg: { duration: true },
       }),
-      prisma.syncLog.findFirst({
+      db().syncLog.findFirst({
         where,
         orderBy: { createdAt: "desc" },
         select: { createdAt: true },
@@ -94,7 +94,7 @@ export class SyncLogService {
    * 清理旧日志
    */
   static async cleanup(before: Date): Promise<number> {
-    const result = await prisma.syncLog.deleteMany({
+    const result = await db().syncLog.deleteMany({
       where: { createdAt: { lt: before } },
     })
 

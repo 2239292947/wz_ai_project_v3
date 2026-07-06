@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 
 /**
  * 获取系统配置
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
     const where = category ? { category } : {}
 
-    const configs = await prisma.systemConfig.findMany({
+    const configs = await db().systemConfig.findMany({
       where,
       orderBy: { category: "asc", configKey: "asc" },
     })

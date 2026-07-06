@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 import type { Prisma } from "@prisma/client"
 import { SystemConfigService } from "./system-config"
 import { v2Api } from "./v2-api"
@@ -89,7 +89,7 @@ export class ApprovalEngine {
     error?: string
   }> {
     // 1. 读取工单当前状态
-    const ticket = await prisma.exceptionTicket.findUnique({
+    const ticket = await db().exceptionTicket.findUnique({
       where: { id: ticketId },
       include: {
         orderSnapshot: true,
@@ -120,7 +120,7 @@ export class ApprovalEngine {
     }
 
     // 3. 在事务中执行审批逻辑
-    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    return await db().$transaction(async (tx: Prisma.TransactionClient) => {
       // 重新读取工单（事务内）
       const currentTicket = await tx.exceptionTicket.findUnique({
         where: { id: ticketId },
@@ -410,7 +410,7 @@ export class ApprovalEngine {
     let escalated = 0
 
     // 查找所有待审批工单
-    const pendingTickets = await prisma.exceptionTicket.findMany({
+    const pendingTickets = await db().exceptionTicket.findMany({
       where: {
         status: { in: ["PENDING", "LEVEL1_APPROVING", "LEVEL2_APPROVING"] },
       },
@@ -431,7 +431,7 @@ export class ApprovalEngine {
 
         if (shouldEscalate) {
           // 升级到二级审批
-          await prisma.exceptionTicket.update({
+          await db().exceptionTicket.update({
             where: { id: ticket.id },
             data: {
               status: "LEVEL2_APPROVING",
@@ -441,7 +441,7 @@ export class ApprovalEngine {
           escalated++
         } else {
           // 自动驳回
-          await prisma.exceptionTicket.update({
+          await db().exceptionTicket.update({
             where: { id: ticket.id },
             data: {
               status: "CANCELLED",
@@ -471,7 +471,7 @@ export class QCHoldTimeoutService {
     let escalated = 0
 
     // 查找所有处于 QC_HOLD 状态的扫描记录
-    const holdRecords = await prisma.scanRecord.findMany({
+    const holdRecords = await db().scanRecord.findMany({
       where: {
         batchStatus: "QC_HOLD",
         ticketId: { not: null },
@@ -494,7 +494,7 @@ export class QCHoldTimeoutService {
       if (elapsedSeconds > qcHoldTimeout) {
         // 品控暂扣超时：强制升级到二级审批
         if (record.ticket.status === "PENDING" || record.ticket.status === "LEVEL1_APPROVING") {
-          await prisma.exceptionTicket.update({
+          await db().exceptionTicket.update({
             where: { id: record.ticket.id },
             data: {
               status: "LEVEL2_APPROVING",

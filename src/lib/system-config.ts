@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { db } from "@/lib/prisma"
 
 export type ConfigCategory = "APPROVAL" | "TIMEOUT" | "QC" | "LOGISTICS" | "ROLE" | "SYNC" | "NOTIFICATION"
 
@@ -11,7 +11,7 @@ export class SystemConfigService {
    * 获取配置值
    */
   static async get<T = string>(key: string, defaultValue?: T): Promise<T> {
-    const config = await prisma.systemConfig.findUnique({
+    const config = await db().systemConfig.findUnique({
       where: { configKey: key },
     })
 
@@ -29,7 +29,7 @@ export class SystemConfigService {
    * 批量获取配置
    */
   static async getByCategory(category: ConfigCategory): Promise<Record<string, unknown>> {
-    const configs = await prisma.systemConfig.findMany({
+    const configs = await db().systemConfig.findMany({
       where: { category, isActive: true },
     })
 
@@ -45,7 +45,7 @@ export class SystemConfigService {
    * 获取所有配置
    */
   static async getAll(): Promise<Record<string, unknown>> {
-    const configs = await prisma.systemConfig.findMany({
+    const configs = await db().systemConfig.findMany({
       where: { isActive: true },
     })
 
@@ -63,7 +63,7 @@ export class SystemConfigService {
   static async set(key: string, value: unknown, type: string, description?: string, category?: string): Promise<void> {
     const configValue = typeof value === "string" ? value : JSON.stringify(value)
 
-    await prisma.systemConfig.upsert({
+    await db().systemConfig.upsert({
       where: { configKey: key },
       create: {
         configKey: key,
