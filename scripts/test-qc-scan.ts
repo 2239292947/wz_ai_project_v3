@@ -5,7 +5,7 @@
  */
 import { PrismaClient } from "../src/generated/prisma"
 import { v2Api } from "../src/lib/v2-api"
-import { QCRuleEngine } from "../src/lib/qc-rules"
+import { qcRuleEngine } from "../src/lib/qc-rules"
 import { SyncLogService } from "../src/lib/sync-log"
 import { OrderSnapshotService } from "../src/lib/order-snapshot-service"
 
@@ -28,7 +28,7 @@ async function main() {
 
     // 2. 品控扫描检测
     console.log("\n2. 执行品控扫描检测...")
-    const qcResult = await QCRuleEngine.evaluateScan({
+    const qcResult = await qcRuleEngine.evaluateScan({
       orderSnapshotId: syncResult.snapshot!.id,
       skuCode: "SKU001",
       skuName: "商品A",
